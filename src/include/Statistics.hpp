@@ -94,14 +94,14 @@ void calculate(const std::vector<T>& distributionVector, U* _average, U* _deviat
 }
 
 template <typename T, typename U>
-void push(std::vector<T>* sample, const U& value, uint32_t* index, const uint32_t& max_size)
+bool push(std::vector<T>* sample, const U& value, uint32_t* index, const uint32_t& max_size)
 {
 	uint32_t length = (*sample).size();
 
 	if (length < max_size) {
 		(*sample).push_back((T)value);
 		*index = length + 1;
-		return;
+		return *index == (length - 1);
 	}
 
 	if (*index < max_size)
@@ -110,6 +110,8 @@ void push(std::vector<T>* sample, const U& value, uint32_t* index, const uint32_
 		*index = 0;
 
 	(*sample)[*index] = (T)value;
+
+	return *index == (length - 1);
 }
 
 template <typename T>
