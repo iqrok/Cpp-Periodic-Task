@@ -22,7 +22,7 @@ void start_timer(timespec* start)
 	clock_gettime(CLOCK_MONOTONIC, start);
 }
 
-uint64_t wait_for_given_period(const timespec& start, const uint64_t& period_ns)
+uint64_t wait(const timespec& start, const uint64_t& period_ns)
 {
 	timespec stop, wakeup_time, remain;
 
@@ -31,8 +31,9 @@ uint64_t wait_for_given_period(const timespec& start, const uint64_t& period_ns)
 	uint64_t exec_time = (stop.tv_nsec + ((stop.tv_sec - start.tv_sec) * NSEC_PER_SEC)) - start.tv_nsec;
 	uint64_t ns = period_ns - exec_time;
 
+	// cap ns at 0
 	if (ns < 0)
-		return exec_time;
+		ns = 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &wakeup_time);
 	wakeup_time.tv_nsec += ns;
@@ -47,7 +48,7 @@ uint64_t wait_for_given_period(const timespec& start, const uint64_t& period_ns)
 	return exec_time;
 }
 
-uint64_t busy_wait_for_given_period(const timespec& start, const uint64_t& period_ns)
+uint64_t busy_wait(const timespec& start, const uint64_t& period_ns)
 {
 	timespec stop, timer;
 
