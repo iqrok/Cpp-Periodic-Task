@@ -97,7 +97,14 @@ void routine_busy()
 		uint64_t exec_time = Sleep::busy_wait(wakeup_time, period_ns);
 		uint64_t pause_time = Timestamp::now_ns() - time_start;
 
-		Statistics::push(&sample_busy, pause_time, &index, max_sample_size);
+		if(Statistics::push(&sample_busy, pause_time, &index, max_sample_size)){
+			Statistics::print_stats(sample_busy, "Busy loop", false);
+			float_t diff = Statistics::average(sample_busy) - period_ns_busy;
+
+			if(diff / period_ns_busy > 0.01){
+				period_ns = period_ns_busy - diff;
+			}
+		}
 	}
 }
 
