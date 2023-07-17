@@ -127,7 +127,7 @@ void print_stats(std::vector<T>& sample, std::string row_name, bool header)
 	const int width = 20;
 
 	if (header) {
-		std::cerr
+		std::cerr << "\n"
 			<< std::right << std::setw(35) << std::setfill(sep) << "Name"
 			<< std::right << std::setw(width) << std::setfill(sep) << "Size"
 			<< std::right << std::setw(width) << std::setfill(sep) << "Mean"

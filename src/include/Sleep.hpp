@@ -24,7 +24,7 @@ void start_timer(timespec* start)
 
 uint64_t wait(const timespec& start, const uint64_t& period_ns)
 {
-	timespec stop, wakeup_time, remain;
+	timespec stop, wakeup_time;
 
 	clock_gettime(CLOCK_MONOTONIC, &stop);
 
@@ -35,8 +35,8 @@ uint64_t wait(const timespec& start, const uint64_t& period_ns)
 	if (ns < 0)
 		ns = 0;
 
-	clock_gettime(CLOCK_MONOTONIC, &wakeup_time);
-	wakeup_time.tv_nsec += ns;
+	wakeup_time.tv_sec = start.tv_sec;
+	wakeup_time.tv_nsec = start.tv_nsec + ns;
 
 	while (wakeup_time.tv_nsec >= NSEC_PER_SEC) {
 		wakeup_time.tv_nsec -= NSEC_PER_SEC;
@@ -72,13 +72,18 @@ uint64_t busy_wait(const timespec& start, const uint64_t& period_ns)
 		stop.tv_sec++;
 	}
 
+	uint32_t counter = 0;
+
 	// busy wait until timer > stop
 	while (timespec_compare(timer, stop)) {
 		// update timer
 		clock_gettime(CLOCK_MONOTONIC, &timer);
 
 		// need to add sleep, otherwise some loop will be executed at much later time
-		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &timer, NULL);
+		if(++counter > 250){
+			counter = 0;
+			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &timer, NULL);
+		}
 	}
 
 	return exec_time;
