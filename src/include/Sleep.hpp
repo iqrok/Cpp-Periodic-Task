@@ -9,18 +9,17 @@
 
 namespace Sleep {
 
-uint32_t step_sleep = 500;
-
-void set_step_sleep(uint32_t num){
-	step_sleep = num;
+void timespec_diff(const timespec& a, const timespec& b, int64_t* ns)
+{
+	*ns = ((a.tv_sec - b.tv_sec) * NSEC_PER_SEC)
+		+ (a.tv_nsec - b.tv_nsec);
 }
 
 bool timespec_compare(const timespec& left, const timespec& right)
 {
-	if (left.tv_sec == right.tv_sec)
-		return left.tv_nsec < right.tv_nsec;
-
-	return left.tv_sec < right.tv_sec;
+	return (left.tv_sec == right.tv_sec)
+		? left.tv_nsec < right.tv_nsec
+		: left.tv_sec < right.tv_sec;
 }
 
 void start_timer(timespec* start)
@@ -28,70 +27,67 @@ void start_timer(timespec* start)
 	clock_gettime(CLOCK_MONOTONIC, start);
 }
 
-uint64_t wait(const timespec& start, const uint64_t& period_ns)
+void wait(const timespec& start, const uint64_t& period_ns,
+										int64_t* exec_time, int64_t* cycle_time)
 {
-	timespec stop;
+	timespec timer;
 
-	clock_gettime(CLOCK_MONOTONIC, &stop);
+	// calculate execution time
+	clock_gettime(CLOCK_MONOTONIC, &timer);
+	timespec_diff(timer, start, exec_time);
 
-	uint64_t exec_time = (stop.tv_nsec + ((stop.tv_sec - start.tv_sec) * NSEC_PER_SEC)) - start.tv_nsec;
-	uint64_t ns = period_ns - exec_time;
+	// reuse timer to set deadline
+	timer.tv_sec = start.tv_sec;
+	timer.tv_nsec = start.tv_nsec + period_ns;
 
-	// cap ns at 0
-	if (ns < 0){
-		ns = 0;
+	// normalize timespec, if nsec is overflowed
+	while (timer.tv_nsec >= NSEC_PER_SEC) {
+		timer.tv_nsec -= NSEC_PER_SEC;
+		timer.tv_sec++;
 	}
 
-	stop.tv_nsec += ns;
+	// sleep for given duration
+	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &timer, NULL);
 
-	while (stop.tv_nsec >= NSEC_PER_SEC) {
-		stop.tv_nsec -= NSEC_PER_SEC;
-		stop.tv_sec++;
-	}
-
-	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &stop, NULL);
-
-	return exec_time;
+	// calculate cycle time
+	clock_gettime(CLOCK_MONOTONIC, &timer);
+	timespec_diff(timer, start, cycle_time);
 }
 
-uint64_t busy_wait(const timespec& start, const uint64_t& period_ns)
+void busy_wait(const timespec& start, const uint64_t& period_ns,
+			int64_t* exec_time, int64_t* cycle_time, const uint16_t& step_sleep)
 {
-	uint32_t counter = 0;
-	timespec stop, timer;
+	uint16_t counter = 0;
+	timespec deadline, timer;
 
-	clock_gettime(CLOCK_MONOTONIC, &stop);
+	// calculate execution time
 	clock_gettime(CLOCK_MONOTONIC, &timer);
+	timespec_diff(timer, start, exec_time);
 
-	uint64_t exec_time = (stop.tv_nsec + ((stop.tv_sec - start.tv_sec) * NSEC_PER_SEC)) - start.tv_nsec;
-	uint64_t ns = period_ns - exec_time;
+	// set deadline
+	deadline.tv_sec = start.tv_sec;
+	deadline.tv_nsec = start.tv_nsec + period_ns;
 
-	// cap ns at 0
-	if (ns < 0){
-		ns = 0;
+	// normalize timespec, if nsec is overflowed
+	while (deadline.tv_nsec >= NSEC_PER_SEC) {
+		deadline.tv_nsec -= NSEC_PER_SEC;
+		deadline.tv_sec++;
 	}
 
-	// reuse stop to determine the deadline
-	stop.tv_nsec += ns;
-
-	// normalize timespec, if nsec is overflow
-	while (stop.tv_nsec >= NSEC_PER_SEC) {
-		stop.tv_nsec -= NSEC_PER_SEC;
-		stop.tv_sec++;
-	}
-
-	// busy wait until timer > stop
-	while (timespec_compare(timer, stop)) {
+	// busy wait until timer > deadline
+	while (timespec_compare(timer, deadline)) {
 		// update timer
 		clock_gettime(CLOCK_MONOTONIC, &timer);
 
-		// need to add sleep, otherwise some loop will be executed at much later time
+		// need to add sleep to avoid throttling being activated by OS
 		if(++counter > step_sleep){
 			counter = 0;
 			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &timer, NULL);
 		}
 	}
 
-	return exec_time;
+	// calculate cycle time
+	timespec_diff(timer, start, cycle_time);
 }
 
 }
