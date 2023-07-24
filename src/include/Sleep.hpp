@@ -2,6 +2,7 @@
 #define _SLEEP_HELPER_HPP_
 
 #include <time.h>
+#include <cstdint>
 
 #ifndef NSEC_PER_SEC
 #define NSEC_PER_SEC 1000000000
@@ -28,7 +29,7 @@ void start_timer(timespec* start)
 }
 
 void wait(const timespec& start, const uint64_t& period_ns,
-										int64_t* exec_time, int64_t* cycle_time)
+	int64_t* exec_time, int64_t* cycle_time)
 {
 	timespec timer;
 
@@ -55,7 +56,7 @@ void wait(const timespec& start, const uint64_t& period_ns,
 }
 
 void busy_wait(const timespec& start, const uint64_t& period_ns,
-			int64_t* exec_time, int64_t* cycle_time, const uint16_t& step_sleep)
+	int64_t* exec_time, int64_t* cycle_time, const uint16_t& step_sleep)
 {
 	uint16_t counter = 0;
 	timespec deadline, timer;
@@ -80,7 +81,7 @@ void busy_wait(const timespec& start, const uint64_t& period_ns,
 		clock_gettime(CLOCK_MONOTONIC, &timer);
 
 		// need to add sleep to avoid throttling being activated by OS
-		if(++counter > step_sleep){
+		if (++counter > step_sleep) {
 			counter = 0;
 			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &timer, NULL);
 		}
