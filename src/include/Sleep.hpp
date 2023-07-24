@@ -1,8 +1,8 @@
 #ifndef _SLEEP_HELPER_HPP_
 #define _SLEEP_HELPER_HPP_
 
-#include <time.h>
 #include <cstdint>
+#include <time.h>
 
 #ifndef NSEC_PER_SEC
 #define NSEC_PER_SEC 1000000000
@@ -12,8 +12,7 @@ namespace Sleep {
 
 void timespec_diff(const timespec& a, const timespec& b, int64_t* ns)
 {
-	*ns = ((a.tv_sec - b.tv_sec) * NSEC_PER_SEC)
-		+ (a.tv_nsec - b.tv_nsec);
+	*ns = ((a.tv_sec - b.tv_sec) * NSEC_PER_SEC) + (a.tv_nsec - b.tv_nsec);
 }
 
 bool timespec_compare(const timespec& left, const timespec& right)
