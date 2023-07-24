@@ -24,7 +24,7 @@ T average(T* distribution, const uint32_t& size)
 	}
 
 	T sum = 0;
-	for(int idx = 0; idx < size; idx++){
+	for (int idx = 0; idx < size; idx++) {
 		sum += distribution[idx];
 	}
 
@@ -41,7 +41,7 @@ T variance(T* distribution, const uint32_t& size)
 	T meanOfSquare = average(distribution, size);
 
 	T sum = 0;
-	for(int idx = 0; idx < size; idx++){
+	for (int idx = 0; idx < size; idx++) {
 		sum += ((distribution[idx] - meanOfSquare) * (distribution[idx] - meanOfSquare));
 	}
 
@@ -64,14 +64,19 @@ void minmax(T* distribution, const uint32_t& size, T* _min, T* _max)
 	*_min = distribution[0];
 	*_max = distribution[0];
 
-	for(int index = 1; index < size; index++){
-		if(*_min > distribution[index]) *_min = distribution[index];
-		if(*_max < distribution[index]) *_max = distribution[index];
+	for (int index = 1; index < size; index++) {
+		if (*_min > distribution[index]) {
+			*_min = distribution[index];
+		}
+
+		if (*_max < distribution[index]) {
+			*_max = distribution[index];
+		}
 	}
 }
 
 template <typename T, typename U>
-void calculate(T* distribution, const uint32_t& size, U* _average, U* _deviation)
+void calculate(T* distribution, const uint32_t& size, U* _average, U* _deviation, U* _min, U* _max)
 {
 	if (size == 0) {
 		throw std::invalid_argument("StatisticsStatic::calculate - The distribution provided is empty.");
@@ -79,10 +84,21 @@ void calculate(T* distribution, const uint32_t& size, U* _average, U* _deviation
 
 	*_average = average(distribution, size);
 
+	*_max = distribution[0];
+	*_min = distribution[0];
+
 	// variance
 	T _accumulation = 0;
-	for(int idx = 0; idx < size; idx++){
-		_accumulation += ((distribution[idx] - *_average) * (distribution[idx] - *_average));
+	for (int index = 0; index < size; index++) {
+		_accumulation += ((distribution[index] - *_average) * (distribution[index] - *_average));
+
+		if (*_min > distribution[index]) {
+			*_min = distribution[index];
+		}
+
+		if (*_max < distribution[index]) {
+			*_max = distribution[index];
+		}
 	}
 
 	T _variance = _accumulation / size;
@@ -97,7 +113,7 @@ bool push(T* distribution, const U& value, uint32_t* index, const uint32_t& size
 		throw std::invalid_argument("StatisticsStatic::push - The distribution provided is empty.");
 	}
 
-	if (*index >= size){
+	if (*index >= size) {
 		*index = 0;
 	}
 
@@ -119,14 +135,14 @@ void print_stats(T* distribution, const uint32_t& size, std::string row_name, bo
 
 	if (header) {
 		std::cerr << "\n"
-			<< std::right << std::setw(35) << std::setfill(sep) << "Name"
-			<< std::right << std::setw(width) << std::setfill(sep) << "Size"
-			<< std::right << std::setw(width) << std::setfill(sep) << "Mean"
-			<< std::right << std::setw(width) << std::setfill(sep) << "StdDev"
-			<< std::right << std::setw(width) << std::setfill(sep) << "Min"
-			<< std::right << std::setw(width) << std::setfill(sep) << "Max"
-			<< std::right << std::setw(width) << std::setfill(sep) << "Diff Min-Max"
-			<< "\n";
+				  << std::right << std::setw(35) << std::setfill(sep) << "Name"
+				  << std::right << std::setw(width) << std::setfill(sep) << "Size"
+				  << std::right << std::setw(width) << std::setfill(sep) << "Mean"
+				  << std::right << std::setw(width) << std::setfill(sep) << "StdDev"
+				  << std::right << std::setw(width) << std::setfill(sep) << "Min"
+				  << std::right << std::setw(width) << std::setfill(sep) << "Max"
+				  << std::right << std::setw(width) << std::setfill(sep) << "Diff Min-Max"
+				  << "\n";
 	}
 
 	std::cerr
