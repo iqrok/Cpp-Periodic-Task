@@ -1,15 +1,11 @@
 #ifndef _MAIN_ROUTINE_HPP_
 #define _MAIN_ROUTINE_HPP_
 
-#include <sys/resource.h>
-#include <sys/types.h>
+#include <TaskCycle.hpp>
 
-#include <Statistics.hpp>
-#include <sleep.hpp>
-#include <timestamp.hpp>
-
-#include <iostream>
-#include <string>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <thread>
 #include <vector>
 
@@ -17,106 +13,112 @@ using namespace std;
 
 namespace MainRoutine {
 
-constexpr int schedule_priority = SCHED_RR;
+TaskCycle::task_config_s config_busy = {
+	false,
+	0,
+	150,
+	SCHED_RR,
+	-20,
+	0.005,
+	1'000'000,
+	700,
+};
 
-const uint64_t period_ns_busy = 500'000;
-const uint64_t period_ns_sleep = 500'000;
+TaskCycle::task_config_s config_sleep = {
+	false,
+	1,
+	150,
+	SCHED_FIFO,
+	-20,
+	0.005,
+	7'500'000,
+	700,
+};
 
-const uint64_t offset_ns = 0;
-const uint32_t max_sample_size = 5'000;
+double result_sleep = 0;
+std::vector<double> data_sleep = {
+	0.1, 0.2, 0.3, 0.4, 0.5,
+	0.6, 0.7, 0.8, 1.0, 0.1,
+	0.2, 0.3, 0.4, 0.5, 0.6,
+	0.7, 0.8, 1.0, 0.1, 0.2,
+	0.3, 0.4, 0.5, 0.6, 0.7,
+	0.8, 1.0, 0.1, 0.2, 0.3,
+	0.4, 0.5, 0.6, 0.7, 0.8,
+	1.0, 0.1, 0.2, 0.3, 0.4,
+	0.5, 0.6, 0.7, 0.8, 1.0,
+	0.1, 0.2, 0.3, 0.4, 0.5,
+	0.6, 0.7, 0.8, 1.0, 0.1,
+	0.2, 0.3, 0.4, 0.5, 0.6,
+	0.7, 0.8, 1.0, 0.1, 0.2,
+	0.3, 0.4, 0.5, 0.6, 0.7,
+	0.8, 1.0, 0.5, 0.6, 0.7,
+};
 
-bool isRunning = false;
-
-std::vector<double> sample_sleep;
-std::vector<double> sample_busy;
+double result_busy = 0;
+std::vector<double> data_busy = {
+	1.1, 1.2, 1.3, 1.4, 1.5,
+	1.6, 1.7, 1.8, 1.0, 1.1,
+	1.2, 1.3, 1.4, 1.5, 1.6,
+	1.7, 1.8, 1.0, 1.1, 1.2,
+	1.3, 1.4, 1.5, 1.6, 1.7,
+	1.8, 1.0, 1.1, 1.2, 1.3,
+	1.4, 1.5, 1.6, 1.7, 1.8,
+	1.0, 1.1, 1.2, 1.3, 1.4,
+	1.5, 1.6, 1.7, 1.8, 1.0,
+	1.1, 1.2, 1.3, 1.4, 1.5,
+	1.6, 1.7, 1.8, 1.0, 1.1,
+	1.2, 1.3, 1.4, 1.5, 1.6,
+	1.7, 1.8, 1.0, 1.1, 1.2,
+	1.3, 1.4, 1.5, 1.6, 1.7,
+	1.8, 1.0, 1.5, 1.6, 1.7,
+};
 
 std::thread thrd_sleep;
 std::thread thrd_busy;
 
-void routine_sleep()
+void workload_sin(const std::vector<double>& data, double& result)
 {
-	pid_t tid = gettid();
-
-#if DEBUG > 0
-	printf("Starting Sleep Loop thread %d\n", tid);
-#endif
-
-	struct sched_param param = {};
-	param.sched_priority = sched_get_priority_max(schedule_priority);
-
-	if (sched_setscheduler(tid, schedule_priority, &param) == -1) {
-		perror("sched_setscheduler failed");
+	double rt = 0;
+	for (size_t i = 0; i < data.size(); ++i) {
+		rt += std::sin(data[i]);
 	}
-
-	setpriority(PRIO_PROCESS, tid, -1);
-
-	struct timespec wakeup_time;
-	uint32_t index = 0;
-	uint64_t period_ns = period_ns_sleep - offset_ns;
-
-	while (isRunning) {
-		Sleep::start_timer(&wakeup_time);
-		uint64_t time_start = Timestamp::now_ns();
-
-		double x = 1000 * 0.1234325325;
-
-		uint64_t exec_time = Sleep::wait(wakeup_time, period_ns);
-		uint64_t pause_time = Timestamp::now_ns() - time_start;
-
-		Statistics::push(&sample_sleep, pause_time, &index, max_sample_size);
-	}
+	result = rt;
 }
 
-void routine_busy()
+void workload_busy(void)
 {
-	pid_t tid = gettid();
+	workload_sin(data_busy, result_busy);
+}
 
-#if DEBUG > 0
-	printf("Starting Busy Loop thread %d\n", tid);
-#endif
-
-	struct sched_param param = {};
-	param.sched_priority = sched_get_priority_max(schedule_priority);
-
-	if (sched_setscheduler(tid, schedule_priority, &param) == -1) {
-		perror("sched_setscheduler failed");
-	}
-
-	setpriority(PRIO_PROCESS, tid, -1);
-
-	struct timespec wakeup_time;
-	uint32_t index = 0;
-	uint64_t period_ns = period_ns_busy - offset_ns;
-
-	while (isRunning) {
-		Sleep::start_timer(&wakeup_time);
-		uint64_t time_start = Timestamp::now_ns();
-
-		double x = 1000 * 0.1234325325;
-
-		uint64_t exec_time = Sleep::busy_wait(wakeup_time, period_ns);
-		uint64_t pause_time = Timestamp::now_ns() - time_start;
-
-		Statistics::push(&sample_busy, pause_time, &index, max_sample_size);
-	}
+void workload_sleep(void)
+{
+	workload_sin(data_sleep, result_sleep);
 }
 
 void start()
 {
-	isRunning = true;
-	thrd_sleep = std::thread(&routine_sleep);
-	thrd_busy = std::thread(&routine_busy);
+	config_sleep.fptr = workload_sleep;
+	config_busy.fptr = workload_busy;
+
+	thrd_sleep = std::thread(&TaskCycle::routine_sleep, &config_sleep);
+	thrd_busy = std::thread(&TaskCycle::routine_busy, &config_busy);
 }
 
 void stop()
 {
-	isRunning = false;
+	config_busy.is_running = false;
+	config_sleep.is_running = false;
 
 	thrd_sleep.join();
 	thrd_busy.join();
 
-	Statistics::print_stats(sample_sleep, "Sleep loop", true);
-	Statistics::print_stats(sample_busy, "Busy loop", false);
+	printf("\n");
+
+	TaskCycle::print_statistics("BUSY WAIT", config_busy.distribution, config_busy.period_ns);
+	TaskCycle::print_statistics("SLEEP", config_sleep.distribution, config_sleep.period_ns);
+
+	printf("workload_busy %lf\n", result_busy);
+	printf("workload_sleep %lf\n", result_sleep);
 }
 
 }
