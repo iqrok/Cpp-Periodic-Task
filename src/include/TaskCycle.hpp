@@ -20,8 +20,6 @@
 
 namespace TaskCycle {
 
-constexpr uint32_t sample_size = 500;
-
 struct distribution_summary_s {
 	float target;
 	float mean;
@@ -30,21 +28,7 @@ struct distribution_summary_s {
 	float max;
 };
 
-struct task_config_s {
-	bool is_running;
-	int8_t affinity;
-	uint16_t step_sleep;
-	int schedule_priority;
-	int nice_value;
-	float tolerance;
-	uint64_t period_ns;
-	int64_t offset_ns;
-	int64_t exec_time;
-	int64_t cycle_time;
-	struct timespec timer;
-	float distribution[sample_size];
-	void (*fptr)(void);
-};
+typedef Sleep::task_config_s task_config_t;
 
 uint8_t get_last_cpu(const uint8_t& n)
 {
@@ -52,10 +36,14 @@ uint8_t get_last_cpu(const uint8_t& n)
 	return (ncpu - 1) - (n % ncpu);
 }
 
-void routine_sleep(task_config_s* task)
+void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_size)
 {
 	pid_t tid = gettid();
 	uint8_t target_affinity = get_last_cpu(task->affinity);
+
+	uint32_t index = 0;
+	float diff;
+	task->_period_cmp = task->period_ns - task->offset_ns;
 
 	cpu_set_t cpuset;
 	CPU_ZERO(&cpuset);
@@ -83,10 +71,6 @@ void routine_sleep(task_config_s* task)
 	if (prctl(PR_SET_TIMERSLACK, 1, tid, 0, 0) == -1) {
 		fprintf(stderr, "(%d) prctl: %s\n", tid, strerror(errno));
 	}
-
-	uint32_t index = 0;
-	float diff;
-	uint64_t period = task->period_ns - task->offset_ns;
 
 #if DEBUG > 0
 	printf("Starting Sleep Loop thread %d on CPU %d\n", tid, target_affinity);
@@ -98,23 +82,27 @@ void routine_sleep(task_config_s* task)
 	while (task->is_running) {
 		(*task->fptr)();
 
-		Sleep::wait(task->timer, period, &task->exec_time, &task->cycle_time);
+		Sleep::wait(task);
 		Sleep::start_timer(&task->timer);
 
-		if (StatisticsStatic::push(task->distribution, task->cycle_time, &index, sample_size)) {
-			diff = StatisticsStatic::average(task->distribution, sample_size) - task->period_ns;
+		if (StatisticsStatic::push(samples, task->cycle_time, &index, sample_size)) {
+			diff = StatisticsStatic::average(samples, sample_size) - task->period_ns;
 
 			if (fabs(diff / task->period_ns) > task->tolerance) {
-				period = task->period_ns - diff;
+				task->_period_cmp = task->period_ns - diff;
 			}
 		}
 	}
 }
 
-void routine_busy(task_config_s* task)
+void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_size)
 {
 	pid_t tid = gettid();
 	uint8_t target_affinity = get_last_cpu(task->affinity);
+
+	uint32_t index = 0;
+	float diff;
+	task->_period_cmp = task->period_ns - task->offset_ns;
 
 	cpu_set_t cpuset;
 	CPU_ZERO(&cpuset);
@@ -143,10 +131,6 @@ void routine_busy(task_config_s* task)
 		fprintf(stderr, "(%d) prctl: %s\n", tid, strerror(errno));
 	}
 
-	uint32_t index = 0;
-	float diff;
-	uint64_t period = task->period_ns - task->offset_ns;
-
 #if DEBUG > 0
 	printf("Starting Busy Loop thread %d on CPU %d\n", tid, target_affinity);
 #endif
@@ -157,21 +141,21 @@ void routine_busy(task_config_s* task)
 	while (task->is_running) {
 		(*task->fptr)();
 
-		Sleep::busy_wait(task->timer, period, &task->exec_time, &task->cycle_time, task->step_sleep);
+		Sleep::busy_wait(task);
 		Sleep::start_timer(&task->timer);
 
-		if (StatisticsStatic::push(task->distribution, task->cycle_time, &index, sample_size)) {
-			diff = StatisticsStatic::average(task->distribution, sample_size) - task->period_ns;
+		if (StatisticsStatic::push(samples, task->cycle_time, &index, sample_size)) {
+			diff = StatisticsStatic::average(samples, sample_size) - task->period_ns;
 
 			if (fabs(diff / task->period_ns) > task->tolerance) {
-				period = task->period_ns - diff;
+				task->_period_cmp = task->period_ns - diff;
 			}
 		}
 	}
 }
 
 void print_statistics(const char* title, float* distribution,
-	const uint64_t& target_period)
+	const uint32_t& sample_size, const uint64_t& target_period)
 {
 	distribution_summary_s summary;
 
