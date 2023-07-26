@@ -1,22 +1,20 @@
 #ifndef _TASK_CYCLE_HPP_
 #define _TASK_CYCLE_HPP_
 
+#include "Sleep.hpp"
+#include "StatisticsStatic.hpp"
+
 #include <errno.h>
 #include <sched.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
-#include <sys/types.h>
 #include <unistd.h>
-
-#include "Sleep.hpp"
-#include "StatisticsStatic.hpp"
 
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <string>
 
 namespace TaskCycle {
 
@@ -196,7 +194,10 @@ void stats_print(const char* title, const struct distribution_summary_s& summary
 
 	printf("diff min max : %15.3f us (%9.3f %% )\n",
 		(summary.max - summary.min) / 1000,
-		100 * ((summary.max - summary.min) / summary.target));
+		100 * (
+			(fabs(summary.min - summary.target) + (fabs(summary.max - summary.target)))
+				/ summary.target));
+
 	printf("------------------------------\n");
 }
 

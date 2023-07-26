@@ -13,7 +13,7 @@ using namespace std;
 
 namespace MainRoutine {
 
-constexpr uint32_t sample_size = 500;
+constexpr uint32_t sample_size = 750;
 
 struct TaskCycle::distribution_summary_s summary_busy;
 float samples_busy[sample_size];
@@ -79,7 +79,7 @@ void start()
 	config_busy.step_sleep = 350;
 	config_busy.schedule_priority = SCHED_FIFO;
 	config_busy.nice_value = -20;
-	config_busy.tolerance = 0.025;
+	config_busy.tolerance = -1;
 	config_busy.lazy_sleep = 650'000;
 	config_busy.period_ns = 1'000'000;
 	config_busy.offset_ns = 750,
@@ -107,14 +107,15 @@ void stop()
 	thrd_sleep.join();
 	thrd_busy.join();
 
-	printf("\n");
-
 	TaskCycle::stats_summarize(&summary_busy, samples_busy, sample_size,
 		config_busy.period_ns);
-	TaskCycle::stats_print("BUSY WAIT", summary_busy);
 
 	TaskCycle::stats_summarize(&summary_sleep, samples_sleep, sample_size,
 		config_sleep.period_ns);
+
+	printf("\n");
+
+	TaskCycle::stats_print("BUSY WAIT", summary_busy);
 	TaskCycle::stats_print("SLEEP", summary_sleep);
 
 	printf("workload busy %lf\n", result_busy);
