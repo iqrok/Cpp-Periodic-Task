@@ -2,37 +2,31 @@
  * original author: Suryasis Paul
  * url: https://github.com/suryasis-hub/MathLibrary/blob/main/MathLibrary/Statistics.h
  * **/
+#ifndef _STATISTICS_STATIC_HPP_
+#define _STATISTICS_STATIC_HPP_
 
 #include <cmath>
-#include <cstdint>
-#include <functional>
-#include <numeric>
-#include <string>
-#include <unordered_map>
-#include <vector>
-
-#include <iomanip>
-#include <iostream>
+#include <stdexcept>
 
 namespace StatisticsStatic {
 
-template <typename T>
-T average(T* distribution, const uint32_t& size)
+template <typename T, typename V>
+T average(T* distribution, const V& size)
 {
 	if (size == 0) {
 		throw std::invalid_argument("StatisticsStatic::expectation - The distribution provided is empty");
 	}
 
 	T sum = 0;
-	for (int idx = 0; idx < size; idx++) {
+	for (V idx = 0; idx < size; idx++) {
 		sum += distribution[idx];
 	}
 
 	return sum / size;
 }
 
-template <typename T>
-T variance(T* distribution, const uint32_t& size)
+template <typename T, typename V>
+T variance(T* distribution, const V& size)
 {
 	if (size == 0) {
 		throw std::invalid_argument("StatisticsStatic::expectation - The distribution provided is empty");
@@ -41,21 +35,21 @@ T variance(T* distribution, const uint32_t& size)
 	T meanOfSquare = average(distribution, size);
 
 	T sum = 0;
-	for (int idx = 0; idx < size; idx++) {
+	for (V idx = 0; idx < size; idx++) {
 		sum += ((distribution[idx] - meanOfSquare) * (distribution[idx] - meanOfSquare));
 	}
 
 	return sum / size;
 }
 
-template <typename T>
-T standardDeviation(T* distribution, const uint32_t& size)
+template <typename T, typename V>
+T standardDeviation(T* distribution, const V& size)
 {
 	return std::sqrt(variance(distribution, size));
 }
 
-template <typename T>
-void minmax(T* distribution, const uint32_t& size, T* _min, T* _max)
+template <typename T, typename V>
+void minmax(T* distribution, const V& size, T* _min, T* _max)
 {
 	if (size == 0) {
 		throw std::invalid_argument("StatisticsStatic::minmax - The distribution provided is empty.");
@@ -64,7 +58,7 @@ void minmax(T* distribution, const uint32_t& size, T* _min, T* _max)
 	*_min = distribution[0];
 	*_max = distribution[0];
 
-	for (int index = 1; index < size; index++) {
+	for (V index = 1; index < size; index++) {
 		if (*_min > distribution[index]) {
 			*_min = distribution[index];
 		}
@@ -75,8 +69,9 @@ void minmax(T* distribution, const uint32_t& size, T* _min, T* _max)
 	}
 }
 
-template <typename T, typename U>
-void calculate(T* distribution, const uint32_t& size, U* _average, U* _deviation, U* _min, U* _max)
+template <typename T, typename U, typename V>
+void calculate(T* distribution, const V& size, const U& target, U* _average,
+	U* _standard_deviation, U* _periodic_deviation, U* _min, U* _max)
 {
 	if (size == 0) {
 		throw std::invalid_argument("StatisticsStatic::calculate - The distribution provided is empty.");
@@ -89,8 +84,10 @@ void calculate(T* distribution, const uint32_t& size, U* _average, U* _deviation
 
 	// variance
 	T _accumulation = 0;
-	for (int index = 0; index < size; index++) {
+	T _paccumulation = 0;
+	for (V index = 0; index < size; index++) {
 		_accumulation += ((distribution[index] - *_average) * (distribution[index] - *_average));
+		_paccumulation += ((distribution[index] - target) * (distribution[index] - target));
 
 		if (*_min > distribution[index]) {
 			*_min = distribution[index];
@@ -101,13 +98,12 @@ void calculate(T* distribution, const uint32_t& size, U* _average, U* _deviation
 		}
 	}
 
-	T _variance = _accumulation / size;
-
-	*_deviation = std::sqrt(_variance);
+	*_standard_deviation = std::sqrt(_accumulation / size);
+	*_periodic_deviation = std::sqrt(_paccumulation / size);
 }
 
-template <typename T, typename U>
-bool push(T* distribution, const U& value, uint32_t* index, const uint32_t& size)
+template <typename T, typename U, typename V>
+bool push(T* distribution, const U& value, V* index, const V& size)
 {
 	if (size == 0) {
 		throw std::invalid_argument("StatisticsStatic::push - The distribution provided is empty.");
@@ -122,38 +118,6 @@ bool push(T* distribution, const U& value, uint32_t* index, const uint32_t& size
 	return *index == size;
 }
 
-template <typename T>
-void print_stats(T* distribution, const uint32_t& size, std::string row_name, bool header)
-{
-	T _average, _deviation, _min, _max;
-
-	calculate(distribution, size, &_average, &_deviation);
-	minmax(distribution, size, &_min, &_max);
-
-	const char sep = ' ';
-	const int width = 20;
-
-	if (header) {
-		std::cerr << "\n"
-				  << std::right << std::setw(35) << std::setfill(sep) << "Name"
-				  << std::right << std::setw(width) << std::setfill(sep) << "Size"
-				  << std::right << std::setw(width) << std::setfill(sep) << "Mean"
-				  << std::right << std::setw(width) << std::setfill(sep) << "StdDev"
-				  << std::right << std::setw(width) << std::setfill(sep) << "Min"
-				  << std::right << std::setw(width) << std::setfill(sep) << "Max"
-				  << std::right << std::setw(width) << std::setfill(sep) << "Diff Min-Max"
-				  << "\n";
-	}
-
-	std::cerr
-		<< std::right << std::setw(35) << std::setfill(sep) << row_name
-		<< std::right << std::setw(width) << std::setfill(sep) << std::fixed << size
-		<< std::right << std::setw(width) << std::setfill(sep) << std::fixed << _average
-		<< std::right << std::setw(width) << std::setfill(sep) << std::fixed << _deviation
-		<< std::right << std::setw(width) << std::setfill(sep) << std::fixed << _min
-		<< std::right << std::setw(width) << std::setfill(sep) << std::fixed << _max
-		<< std::right << std::setw(width) << std::setfill(sep) << std::fixed << (_max - _min)
-		<< "\n";
 }
 
-}
+#endif
