@@ -10,16 +10,17 @@
 
 namespace Sleep {
 
-struct task_config_s {
-	bool is_running;
-	int8_t affinity;
-	uint16_t step_sleep;
-	int schedule_priority;
-	int nice_value;
-	float tolerance;
-	float laziness;
+struct sleep_task_s {
+	bool is_running = false;
+	int8_t schedule_priority = -1;
+	int8_t affinity = -1;
+	int8_t nice_value = 20;
+	uint16_t step_sleep = 1;
+	uint16_t _counter = 0;
+	float tolerance = -1;
+	uint64_t lazy_sleep = 0;
 	uint64_t period_ns;
-	int64_t offset_ns;
+	int64_t offset_ns = 0;
 	int64_t exec_time;
 	int64_t cycle_time;
 	uint64_t _period_cmp;
@@ -29,7 +30,8 @@ struct task_config_s {
 	void (*fptr)(void);
 };
 
-void timespec_diff(const timespec& a, const timespec& b, int64_t* ns)
+void timespec_diff(const struct timespec& a, const struct timespec& b,
+	int64_t* ns)
 {
 	*ns = ((a.tv_sec - b.tv_sec) * NSEC_PER_SEC) + (a.tv_nsec - b.tv_nsec);
 }
@@ -42,30 +44,35 @@ void timespec_normalize(struct timespec* a)
 	}
 }
 
-bool timespec_compare(const timespec& left, const timespec& right)
+void timespec_copy(struct timespec* dst, const struct timespec& src,
+	const int64_t& offset_ns)
+{
+	dst->tv_sec = src.tv_sec;
+	dst->tv_nsec = src.tv_nsec + offset_ns;
+
+	timespec_normalize(dst);
+}
+
+bool timespec_compare(const struct timespec& left, const struct timespec& right)
 {
 	return (left.tv_sec == right.tv_sec)
 		? left.tv_nsec < right.tv_nsec
 		: left.tv_sec < right.tv_sec;
 }
 
-void start_timer(timespec* start)
+void start_timer(struct timespec* start)
 {
 	clock_gettime(CLOCK_MONOTONIC, start);
 }
 
-void wait(struct task_config_s* task)
+void wait(struct sleep_task_s* task)
 {
 	// calculate execution time
 	clock_gettime(CLOCK_MONOTONIC, &task->current);
 	timespec_diff(task->current, task->timer, &task->exec_time);
 
 	// reuse task->current to set deadline
-	task->deadline.tv_sec = task->timer.tv_sec;
-	task->deadline.tv_nsec = task->timer.tv_nsec + task->_period_cmp;
-
-	// normalize timespec, if nsec is overflowed
-	timespec_normalize(&task->deadline);
+	timespec_copy(&task->deadline, task->timer, task->_period_cmp);
 
 	// sleep for given duration
 	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &task->deadline, NULL);
@@ -75,32 +82,23 @@ void wait(struct task_config_s* task)
 	timespec_diff(task->deadline, task->timer, &task->cycle_time);
 }
 
-void busy_wait(struct task_config_s* task)
+void busy_wait(struct sleep_task_s* task)
 {
-	uint16_t counter = 0;
-	//~ timespec deadline, timer;
+	task->_counter = 0;
 
 	// calculate execution time
 	clock_gettime(CLOCK_MONOTONIC, &task->current);
 	timespec_diff(task->current, task->timer, &task->exec_time);
 
-	if(task->laziness > 0){
-		// set deadline
-		task->deadline.tv_sec = task->timer.tv_sec;
-		task->deadline.tv_nsec = task->timer.tv_nsec + task->laziness;
-
-		// normalize timespec, if nsec is overflowed
-		timespec_normalize(&task->deadline);
-
+	// do lazy sleep, if it's valid, to reduce cpu usage on busy waiting
+	if (task->lazy_sleep > 0) {
+		// set deadline for lazy sleep
+		timespec_copy(&task->deadline, task->timer, task->lazy_sleep);
 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &task->deadline, NULL);
 	}
 
-	// set deadline
-	task->deadline.tv_sec = task->timer.tv_sec;
-	task->deadline.tv_nsec = task->timer.tv_nsec + task->_period_cmp;
-
-	// normalize timespec, if nsec is overflowed
-	timespec_normalize(&task->deadline);
+	// set deadline for busy wait
+	timespec_copy(&task->deadline, task->timer, task->_period_cmp);
 
 	// busy wait until timer > deadline
 	while (timespec_compare(task->current, task->deadline)) {
@@ -108,8 +106,8 @@ void busy_wait(struct task_config_s* task)
 		clock_gettime(CLOCK_MONOTONIC, &task->current);
 
 		// need to add sleep to avoid throttling being activated by OS
-		if (++counter > task->step_sleep) {
-			counter = 0;
+		if (++task->_counter > task->step_sleep) {
+			task->_counter = 0;
 			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &task->current, NULL);
 		}
 	}
