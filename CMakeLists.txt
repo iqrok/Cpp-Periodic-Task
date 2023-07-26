@@ -7,7 +7,9 @@ project("${PROJECT_NAME}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -O2 -fPIC -Wall")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -O2")
+
+add_compile_options(-fPIC -Wall -Wfatal-errors -Wpedantic)
 
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 	add_compile_options (-fdiagnostics-color=always)
@@ -16,14 +18,12 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 endif ()
 
 if (DEBUG)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ggdb")
+	add_compile_options(-ggdb)
 endif()
 
 if (DUMMY)
 	add_compile_definitions(DUMMY=1)
 endif()
-
-message("CXX FLAGS: ${CMAKE_CXX_FLAGS}")
 
 set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib")
@@ -48,3 +48,7 @@ set(
 	)
 
 add_executable("${OUTPUT_BIN_MAIN}" "${SOURCE_BIN_MAIN}")
+get_target_property(COMPILE_OPTIONS "${OUTPUT_BIN_MAIN}" COMPILE_OPTIONS)
+
+message("[CXX FLAGS] ${CMAKE_CXX_FLAGS}")
+message("[COMPILE OPTIONS]: ${COMPILE_OPTIONS}")
