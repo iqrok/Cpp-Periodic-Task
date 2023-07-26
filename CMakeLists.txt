@@ -21,34 +21,19 @@ if (DEBUG)
 	add_compile_options(-ggdb)
 endif()
 
-if (DUMMY)
-	add_compile_definitions(DUMMY=1)
-endif()
-
 set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
 set(LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib")
 set(SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build")
-set(INCLUDE_SRC_DIR "${SOURCE_DIR}/include")
 
 # link lib pthread
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-# link lib rt (realtime), for shm_op and shm_unlink
-link_libraries(Threads::Threads rt)
+link_libraries(Threads::Threads)
 
-include_directories("${INCLUDE_DIR}" "${INCLUDE_SRC_DIR}")
-
-set(OUTPUT_BIN_MAIN "${PROJECT_NAME}")
-
-set(
-		SOURCE_BIN_MAIN
-			"${SOURCE_DIR}/main.cpp"
-	)
-
-add_executable("${OUTPUT_BIN_MAIN}" "${SOURCE_BIN_MAIN}")
-get_target_property(COMPILE_OPTIONS "${OUTPUT_BIN_MAIN}" COMPILE_OPTIONS)
+include_directories("${INCLUDE_DIR}")
 
 message("[CXX FLAGS] ${CMAKE_CXX_FLAGS}")
-message("[COMPILE OPTIONS]: ${COMPILE_OPTIONS}")
+
+add_subdirectory("./test")

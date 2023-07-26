@@ -1,5 +1,5 @@
-#ifndef _MAIN_ROUTINE_HPP_
-#define _MAIN_ROUTINE_HPP_
+#ifndef _CYCLE_TEST_HPP_
+#define _CYCLE_TEST_HPP_
 
 #include <TaskCycle.hpp>
 

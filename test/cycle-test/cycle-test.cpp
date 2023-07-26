@@ -1,4 +1,4 @@
-#include "main.hpp"
+#include "cycle-test.hpp"
 
 #include <signal.h>
 #include <stdio.h>
