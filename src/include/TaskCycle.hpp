@@ -23,12 +23,18 @@ namespace TaskCycle {
 struct distribution_summary_s {
 	float target;
 	float mean;
-	float stdDev;
+	float standard_deviation;
+	float periodic_deviation;
 	float min;
 	float max;
+	float percent_standard_deviation;
+	float percent_periodic_deviation;
+	float percent_min;
+	float percent_max;
+	uint32_t size;
 };
 
-typedef Sleep::task_config_s task_config_t;
+typedef Sleep::sleep_task_s task_config_t;
 
 uint8_t get_last_cpu(const uint8_t& n)
 {
@@ -36,44 +42,55 @@ uint8_t get_last_cpu(const uint8_t& n)
 	return (ncpu - 1) - (n % ncpu);
 }
 
-void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_size)
+void set_thread_properties(const pid_t& tid, const task_config_t* task)
 {
-	pid_t tid = gettid();
-	uint8_t target_affinity = get_last_cpu(task->affinity);
+	if (task->affinity > -1) {
+		uint8_t target_affinity = get_last_cpu(task->affinity);
 
-	uint32_t index = 0;
-	float diff;
-	task->_period_cmp = task->period_ns - task->offset_ns;
+		cpu_set_t cpuset;
+		CPU_ZERO(&cpuset);
+		CPU_SET(target_affinity, &cpuset);
 
-	cpu_set_t cpuset;
-	CPU_ZERO(&cpuset);
-	CPU_SET(target_affinity, &cpuset);
-
-	struct sched_param param = {};
-	param.sched_priority = sched_get_priority_max(task->schedule_priority);
-
-	if (sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset) == -1) {
-		fprintf(stderr, "(%d) sched_setaffinity: %s\n", tid, strerror(errno));
+		if (sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset) == -1) {
+			fprintf(stderr, "(%d) sched_setaffinity: %s\n", tid, strerror(errno));
+		}
 	}
 
-	if (sched_setscheduler(tid, task->schedule_priority, &param) == -1) {
-		fprintf(stderr, "(%d) sched_setscheduler: %s\n", tid, strerror(errno));
+	if (task->schedule_priority > -1) {
+		struct sched_param param = {};
+		param.sched_priority = sched_get_priority_max(task->schedule_priority);
+
+		if (sched_setscheduler(tid, task->schedule_priority, &param) == -1) {
+			fprintf(stderr, "(%d) sched_setscheduler: %s\n", tid, strerror(errno));
+		}
 	}
 
-	if (setpriority(PRIO_PROCESS, tid, task->nice_value) == -1) {
-		fprintf(stderr, "(%d) setpriority: %s\n", tid, strerror(errno));
-	}
-
-	if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
-		fprintf(stderr, "(%d) Failed to lock memory: %s\n", tid, strerror(errno));
+	if (task->nice_value != 20) {
+		if (setpriority(PRIO_PROCESS, tid, task->nice_value) == -1) {
+			fprintf(stderr, "(%d) setpriority: %s\n", tid, strerror(errno));
+		}
 	}
 
 	if (prctl(PR_SET_TIMERSLACK, 1, tid, 0, 0) == -1) {
 		fprintf(stderr, "(%d) prctl: %s\n", tid, strerror(errno));
 	}
+}
+
+void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_size)
+{
+	pid_t tid = gettid();
+	uint32_t index = 0;
+	float diff;
+	task->_period_cmp = task->period_ns - task->offset_ns;
+
+	set_thread_properties(tid, task);
+
+	if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
+		fprintf(stderr, "(%d) Failed to lock memory: %s\n", tid, strerror(errno));
+	}
 
 #if DEBUG > 0
-	printf("Starting Sleep Loop thread %d on CPU %d\n", tid, target_affinity);
+	printf("(%d) Starting Sleep Loop thread\n", tid);
 #endif
 
 	task->is_running = true;
@@ -86,8 +103,11 @@ void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_s
 		Sleep::start_timer(&task->timer);
 
 		if (StatisticsStatic::push(samples, task->cycle_time, &index, sample_size)) {
-			diff = StatisticsStatic::average(samples, sample_size) - task->period_ns;
+			if (task->tolerance < 0) {
+				continue;
+			}
 
+			diff = StatisticsStatic::average(samples, sample_size) - task->period_ns;
 			if (fabs(diff / task->period_ns) > task->tolerance) {
 				task->_period_cmp = task->period_ns - diff;
 			}
@@ -98,42 +118,24 @@ void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_s
 void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_size)
 {
 	pid_t tid = gettid();
-	uint8_t target_affinity = get_last_cpu(task->affinity);
-
 	uint32_t index = 0;
 	float diff;
 	task->_period_cmp = task->period_ns - task->offset_ns;
 
-	cpu_set_t cpuset;
-	CPU_ZERO(&cpuset);
-	CPU_SET(target_affinity, &cpuset);
-
-	struct sched_param param = {};
-	param.sched_priority = sched_get_priority_max(task->schedule_priority);
-
-	if (sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset) == -1) {
-		fprintf(stderr, "(%d) sched_setaffinity: %s\n", tid, strerror(errno));
-	}
-
-	if (sched_setscheduler(tid, task->schedule_priority, &param) == -1) {
-		fprintf(stderr, "(%d) sched_setscheduler: %s\n", tid, strerror(errno));
-	}
-
-	if (setpriority(PRIO_PROCESS, tid, task->nice_value) == -1) {
-		fprintf(stderr, "(%d) setpriority: %s\n", tid, strerror(errno));
-	}
+	set_thread_properties(tid, task);
 
 	if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
 		fprintf(stderr, "(%d) Failed to lock memory: %s\n", tid, strerror(errno));
 	}
 
-	if (prctl(PR_SET_TIMERSLACK, 1, tid, 0, 0) == -1) {
-		fprintf(stderr, "(%d) prctl: %s\n", tid, strerror(errno));
-	}
-
 #if DEBUG > 0
-	printf("Starting Busy Loop thread %d on CPU %d\n", tid, target_affinity);
+	printf("(%d) Starting Busy Loop thread\n", tid);
 #endif
+
+	// disable lazy_sleep if the value is greater than the period
+	if (task->lazy_sleep >= task->_period_cmp) {
+		task->lazy_sleep = -1;
+	}
 
 	task->is_running = true;
 	Sleep::start_timer(&task->timer);
@@ -145,8 +147,11 @@ void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_si
 		Sleep::start_timer(&task->timer);
 
 		if (StatisticsStatic::push(samples, task->cycle_time, &index, sample_size)) {
-			diff = StatisticsStatic::average(samples, sample_size) - task->period_ns;
+			if (task->tolerance < 0) {
+				continue;
+			}
 
+			diff = StatisticsStatic::average(samples, sample_size) - task->period_ns;
 			if (fabs(diff / task->period_ns) > task->tolerance) {
 				task->_period_cmp = task->period_ns - diff;
 			}
@@ -154,24 +159,44 @@ void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_si
 	}
 }
 
-void print_statistics(const char* title, float* distribution,
+void stats_summarize(struct distribution_summary_s* summary, float* distribution,
 	const uint32_t& sample_size, const uint64_t& target_period)
 {
-	distribution_summary_s summary;
+	summary->target = target_period;
+	summary->size = sample_size;
 
-	summary.target = target_period;
-	StatisticsStatic::calculate(distribution, sample_size, &summary.mean, &summary.stdDev, &summary.min, &summary.max);
+	StatisticsStatic::calculate(
+		distribution, sample_size, summary->target, &summary->mean,
+		&summary->standard_deviation, &summary->periodic_deviation,
+		&summary->min, &summary->max);
 
+	summary->percent_periodic_deviation = summary->periodic_deviation / summary->target;
+	summary->percent_standard_deviation = summary->periodic_deviation / summary->mean;
+	summary->percent_min = fabs(summary->min - summary->target) / summary->target;
+	summary->percent_max = fabs(summary->max - summary->target) / summary->target;
+}
+
+void stats_print(const char* title, const struct distribution_summary_s& summary)
+{
 	printf("============ %s ============\n", title);
-	printf("Sample Size  : %15d\n", sample_size);
-	printf("Task Period  : %15.6f us (%.3f Hz)\n", summary.target / 1000, 1 / summary.target * 1E9);
-	printf("mean         : %15.6f us (%.3f Hz)\n", summary.mean / 1000, 1 / summary.mean * 1E9);
-	printf("deviation    : %15.6f us\n", summary.stdDev / 1000);
-	printf("min          : %15.6f us\n", summary.min / 1000);
-	printf("max          : %15.6f us\n", summary.max / 1000);
-	printf("diff min max : %15.6f us\n", (summary.max - summary.min) / 1000);
-	printf("%% deviation  : %15.6f %%\n", 100 * (summary.stdDev / summary.target));
-	printf("%% minmax     : %15.6f %%\n", 100 * ((summary.max - summary.min) / summary.target));
+	printf("Sample Size  : %15d\n", summary.size);
+	printf("Task Period  : %15.3f us ± %9.3f us (%6.3f %%, %9.3f Hz )\n",
+		summary.target / 1000, summary.periodic_deviation / 1000,
+		100 * summary.percent_periodic_deviation, 1E9 / summary.target);
+
+	printf("mean         : %15.3f us ± %9.3f us (%6.3f %%, %9.3f Hz )\n",
+		summary.mean / 1000, summary.standard_deviation / 1000,
+		100 * summary.percent_standard_deviation, 1E9 / summary.mean);
+
+	printf("min          : %15.3f us (%9.3f %% )\n", summary.min / 1000,
+		100 * summary.percent_min);
+
+	printf("max          : %15.3f us (%9.3f %% )\n", summary.max / 1000,
+		100 * summary.percent_max);
+
+	printf("diff min max : %15.3f us (%9.3f %% )\n",
+		(summary.max - summary.min) / 1000,
+		100 * ((summary.max - summary.min) / summary.target));
 	printf("------------------------------\n");
 }
 
