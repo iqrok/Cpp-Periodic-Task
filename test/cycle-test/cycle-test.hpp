@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 
@@ -13,12 +14,21 @@ using namespace std;
 
 namespace MainRoutine {
 
-constexpr uint32_t sample_size = 750;
+void workload_sin(const std::vector<double>& data, double& result);
+void workload_busy(void);
+void workload_sleep(void);
+void workload_else(void);
 
-struct TaskCycle::distribution_summary_s summary_busy;
-float samples_busy[sample_size];
-TaskCycle::task_config_t config_busy;
-std::thread thrd_busy;
+constexpr uint32_t sample_size = 300;
+
+struct TaskConfigurations {
+	struct TaskCycle::distribution_summary_s summary;
+	float samples[sample_size];
+	TaskCycle::task_config_t config;
+	std::thread thread;
+};
+
+struct TaskConfigurations tBusy, tSleep, tDeadline;
 
 double result_busy = 0;
 std::vector<double> data_busy = {
@@ -34,11 +44,6 @@ std::vector<double> data_busy = {
 	1.7, 1.8, 2.0, 1.1, 1.2, 1.1, 1.2, 1.5, 1.6, 1.7,
 };
 
-struct TaskCycle::distribution_summary_s summary_sleep;
-float samples_sleep[sample_size];
-TaskCycle::task_config_t config_sleep;
-std::thread thrd_sleep;
-
 double result_sleep = 0;
 std::vector<double> data_sleep = {
 	0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1,
@@ -52,7 +57,6 @@ std::vector<double> data_sleep = {
 	0.7, 0.8, 1.0, 0.1, 0.2, 0.5, 0.6, 0.7, 0.6, 0.7,
 	0.4, 0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.7, 0.8, 1.0,
 };
-
 
 void workload_sin(const std::vector<double>& data, double& result)
 {
@@ -75,48 +79,53 @@ void workload_sleep(void)
 
 void start()
 {
-	config_busy.affinity = 1;
-	config_busy.step_sleep = 350;
-	config_busy.schedule_priority = SCHED_FIFO;
-	config_busy.nice_value = -20;
-	config_busy.tolerance = -1;
-	config_busy.lazy_sleep = 650'000;
-	config_busy.period_ns = 1'000'000;
-	config_busy.offset_ns = 750,
-	config_busy.fptr = workload_busy;
+	tBusy.config.affinity = 1;
+	tBusy.config.step_sleep = 350;
+	tBusy.config.schedule_priority = SCHED_FIFO;
+	tBusy.config.nice_value = -20;
+	tBusy.config.tolerance = -1;
+	tBusy.config.period_ns = 750'000;
+	tBusy.config.lazy_sleep = tBusy.config.period_ns - 250'000;
+	tBusy.config.offset_ns = 750,
+	tBusy.config.fptr = workload_busy;
 
-	config_sleep.affinity = 0;
-	config_sleep.schedule_priority = SCHED_FIFO;
-	config_sleep.nice_value = -20;
-	config_busy.tolerance = 0.05;
-	config_sleep.period_ns = 1'000'000;
-	config_sleep.offset_ns = 700,
-	config_sleep.fptr = workload_sleep;
+	tSleep.config.affinity = 1;
+	tSleep.config.step_sleep = 350;
+	tSleep.config.schedule_priority = SCHED_FIFO;
+	tSleep.config.priority_offset = 5;
+	tSleep.config.nice_value = -20;
+	tSleep.config.tolerance = -1;
+	tSleep.config.period_ns = 1'500'000;
+	tSleep.config.lazy_sleep = tSleep.config.period_ns - 250'000;
+	tSleep.config.offset_ns = 550,
+	tSleep.config.fptr = workload_sleep;
 
-	thrd_sleep = std::thread(&TaskCycle::routine_sleep, &config_sleep,
-		samples_sleep, sample_size);
-	thrd_busy = std::thread(&TaskCycle::routine_busy, &config_busy,
-		samples_busy, sample_size);
+
+	tSleep.thread = std::thread(&TaskCycle::routine_busy, &tSleep.config,
+		tSleep.samples, sample_size);
+
+	tBusy.thread = std::thread(&TaskCycle::routine_busy, &tBusy.config,
+		tBusy.samples, sample_size);
 }
 
 void stop()
 {
-	config_busy.is_running = false;
-	config_sleep.is_running = false;
+	tBusy.config.is_running = false;
+	tSleep.config.is_running = false;
 
-	thrd_sleep.join();
-	thrd_busy.join();
+	tSleep.thread.join();
+	tBusy.thread.join();
 
-	TaskCycle::stats_summarize(&summary_busy, samples_busy, sample_size,
-		config_busy.period_ns);
+	TaskCycle::stats_summarize(&tBusy.summary, tBusy.samples, sample_size,
+		tBusy.config.period_ns);
 
-	TaskCycle::stats_summarize(&summary_sleep, samples_sleep, sample_size,
-		config_sleep.period_ns);
+	TaskCycle::stats_summarize(&tSleep.summary, tSleep.samples, sample_size,
+		tSleep.config.period_ns);
 
 	printf("\n");
 
-	TaskCycle::stats_print("BUSY WAIT", summary_busy);
-	TaskCycle::stats_print("SLEEP", summary_sleep);
+	TaskCycle::stats_print("BUSY WAIT", tBusy.summary);
+	TaskCycle::stats_print("SLEEP", tSleep.summary);
 
 	printf("workload busy %lf\n", result_busy);
 	printf("workload sleep %lf\n", result_sleep);
