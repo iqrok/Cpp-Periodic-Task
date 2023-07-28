@@ -56,7 +56,11 @@ void set_thread_properties(const pid_t& tid, const task_config_t* task)
 
 	if (task->schedule_priority > -1) {
 		struct sched_param param = {};
-		param.sched_priority = sched_get_priority_max(task->schedule_priority);
+		param.sched_priority = sched_get_priority_max(task->schedule_priority) - task->priority_offset;
+
+#if DEBUG > 0
+		fprintf(stderr, "(%d) Schedule priority: (%d - %d = %d)\n", tid, sched_get_priority_max(task->schedule_priority), task->priority_offset, param.sched_priority);
+#endif
 
 		if (sched_setscheduler(tid, task->schedule_priority, &param) == -1) {
 			fprintf(stderr, "(%d) sched_setscheduler: %s\n", tid, strerror(errno));
