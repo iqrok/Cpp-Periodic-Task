@@ -18,6 +18,7 @@ struct sleep_task_s {
 	uint16_t step_sleep = 1;
 	uint16_t _counter = 0;
 	float tolerance = -1;
+	int32_t priority_offset = 0;
 	uint64_t lazy_sleep = 0;
 	uint64_t period_ns;
 	int64_t offset_ns = 0;
