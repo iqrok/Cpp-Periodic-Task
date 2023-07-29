@@ -3,6 +3,10 @@
 
 #include "Sleep.hpp"
 #include "StatisticsStatic.hpp"
+#include "TimespecHelper.hpp"
+
+#include <linux/sched.h>
+#include <sys/syscall.h>
 
 #include <errno.h>
 #include <sched.h>
@@ -17,6 +21,17 @@
 #include <cstring>
 
 namespace TaskCycle {
+
+struct sched_attr {
+    uint32_t size;
+    uint32_t sched_policy;
+    uint64_t sched_flags;
+    int32_t sched_nice;
+    uint32_t sched_priority;
+    uint64_t sched_runtime;
+    uint64_t sched_deadline;
+    uint64_t sched_period;
+};
 
 struct distribution_summary_s {
 	float target;
@@ -59,7 +74,7 @@ void set_thread_properties(const pid_t& tid, const task_config_t* task)
 		param.sched_priority = sched_get_priority_max(task->schedule_priority) - task->priority_offset;
 
 #if DEBUG > 0
-		fprintf(stderr, "(%d) Schedule priority: (%d - %d = %d)\n", tid, sched_get_priority_max(task->schedule_priority), task->priority_offset, param.sched_priority);
+		fprintf(stderr, "(%d) Schedule priority: %d\n", tid, param.sched_priority);
 #endif
 
 		if (sched_setscheduler(tid, task->schedule_priority, &param) == -1) {
@@ -87,22 +102,18 @@ void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_s
 
 	set_thread_properties(tid, task);
 
-	if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
-		fprintf(stderr, "(%d) Failed to lock memory: %s\n", tid, strerror(errno));
-	}
-
 #if DEBUG > 0
 	printf("(%d) Starting Sleep Loop thread\n", tid);
 #endif
 
 	task->is_running = true;
-	Sleep::start_timer(&task->timer);
+	Timespec::now(&task->timer);
 
 	while (task->is_running) {
 		(*task->fptr)();
 
 		Sleep::wait(task);
-		Sleep::start_timer(&task->timer);
+		Timespec::now(&task->timer);
 
 		if (StatisticsStatic::push(samples, task->cycle_time, &index, sample_size)) {
 			if (task->tolerance < 0) {
@@ -126,10 +137,6 @@ void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_si
 
 	set_thread_properties(tid, task);
 
-	if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
-		fprintf(stderr, "(%d) Failed to lock memory: %s\n", tid, strerror(errno));
-	}
-
 #if DEBUG > 0
 	printf("(%d) Starting Busy Loop thread\n", tid);
 #endif
@@ -140,13 +147,13 @@ void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_si
 	}
 
 	task->is_running = true;
-	Sleep::start_timer(&task->timer);
+	Timespec::now(&task->timer);
 
 	while (task->is_running) {
 		(*task->fptr)();
 
 		Sleep::busy_wait(task);
-		Sleep::start_timer(&task->timer);
+		Timespec::now(&task->timer);
 
 		if (StatisticsStatic::push(samples, task->cycle_time, &index, sample_size)) {
 			if (task->tolerance < 0) {
@@ -158,6 +165,45 @@ void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_si
 				task->_period_cmp = task->period_ns - diff;
 			}
 		}
+	}
+}
+
+void routine_deadline(task_config_t* task, float* samples, const uint32_t& sample_size)
+{
+	pid_t tid = gettid();
+	uint32_t index = 0;
+
+	struct sched_attr attr;
+    attr.size = sizeof(attr);
+    attr.sched_policy = SCHED_DEADLINE;
+    attr.sched_nice = task->nice_value;
+    attr.sched_runtime = task->exec_time;
+    attr.sched_period = task->period_ns - task->offset_ns;
+    attr.sched_deadline = attr.sched_period >> 1;
+
+    if(syscall(__NR_sched_setattr, tid, &attr, 0) == -1){
+		fprintf(stderr, "(%d) Failed to set sched_attr: %s\n", tid, strerror(errno));
+		return;
+	}
+
+	if (setpriority(PRIO_PROCESS, tid, task->nice_value) == -1) {
+		fprintf(stderr, "(%d) setpriority: %s\n", tid, strerror(errno));
+	}
+
+#if DEBUG > 0
+	printf("(%d) Starting Sched Deadline thread\n", tid);
+#endif
+
+	task->is_running = true;
+
+	while(task->is_running){
+		Timespec::now(&task->timer);
+		(*task->fptr)();
+		Timespec::diff(task->timer, task->deadline, &task->cycle_time);
+		StatisticsStatic::push(samples, task->cycle_time, &index, sample_size);
+		Timespec::copy(&task->deadline, task->timer, 0);
+
+		sched_yield();
 	}
 }
 
