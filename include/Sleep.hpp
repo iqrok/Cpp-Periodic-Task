@@ -7,30 +7,21 @@
 #include <time.h>
 
 #ifndef NSEC_PER_SEC
-#define NSEC_PER_SEC 1000000000
+#define NSEC_PER_SEC 1'000'000'000
 #endif
 
 namespace Sleep {
 
 struct sleep_task_s {
-	bool is_running = false;
-	int8_t schedule_priority = -1;
-	int8_t affinity = -1;
-	int8_t nice_value = 20;
 	uint16_t step_sleep = 1;
-	uint16_t _counter = 0;
-	float tolerance = -1;
-	int32_t priority_offset = 0;
-	uint64_t lazy_sleep = 0;
-	uint64_t period_ns;
-	int64_t offset_ns = 0;
+	uint16_t counter = 0;
 	int64_t exec_time;
 	int64_t cycle_time;
-	uint64_t _period_cmp;
+	uint64_t period_cmp;
+	uint64_t lazy_sleep = 0;
 	struct timespec timer;
 	struct timespec deadline;
 	struct timespec current;
-	void (*fptr)(void);
 };
 
 void wait(struct sleep_task_s* task)
@@ -40,7 +31,7 @@ void wait(struct sleep_task_s* task)
 	Timespec::diff(task->current, task->timer, &task->exec_time);
 
 	// reuse task->current to set deadline
-	Timespec::copy(&task->deadline, task->timer, task->_period_cmp);
+	Timespec::copy(&task->deadline, task->timer, task->period_cmp);
 
 	// sleep for given duration
 	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &task->deadline, NULL);
@@ -52,7 +43,7 @@ void wait(struct sleep_task_s* task)
 
 void busy_wait(struct sleep_task_s* task)
 {
-	task->_counter = 0;
+	task->counter = 0;
 
 	// calculate execution time
 	Timespec::now(&task->current);
@@ -66,7 +57,7 @@ void busy_wait(struct sleep_task_s* task)
 	}
 
 	// set deadline for busy wait
-	Timespec::copy(&task->deadline, task->timer, task->_period_cmp);
+	Timespec::copy(&task->deadline, task->timer, task->period_cmp);
 
 	// busy wait until timer > deadline
 	while (Timespec::compare(task->current, task->deadline)) {
@@ -74,8 +65,8 @@ void busy_wait(struct sleep_task_s* task)
 		Timespec::now(&task->current);
 
 		// need to add sleep to avoid throttling being activated by OS
-		if (++task->_counter > task->step_sleep) {
-			task->_counter = 0;
+		if (++task->counter > task->step_sleep) {
+			task->counter = 0;
 			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &task->current, NULL);
 		}
 	}
