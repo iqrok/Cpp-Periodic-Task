@@ -5,6 +5,7 @@
 
 #include <sys/mman.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -17,66 +18,27 @@
 using namespace std;
 
 namespace MainRoutine {
+constexpr uint32_t sample_size = 500;
+constexpr uint32_t test_size = 4;
+
+struct TaskConfigurations {
+	struct TaskCycle::distribution_summary_s summary;
+	float samples[sample_size];
+	TaskCycle::task_config_t task;
+	std::thread thread;
+	std::string name;
+	void (*routine)(TaskCycle::task_config_t*, float*, const uint32_t&);
+	double result;
+};
 
 void workload_sin(const std::vector<double>& data, double& result);
 void workload_busy(void);
 void workload_busy2(void);
 void workload_deadline(void);
 
-constexpr uint32_t sample_size = 500;
-
-struct TaskConfigurations {
-	struct TaskCycle::distribution_summary_s summary;
-	float samples[sample_size];
-	TaskCycle::task_config_t config;
-	std::thread thread;
-	std::string name;
-};
-
-struct TaskConfigurations tBusy, tBusy2, tDeadline, tDeadline2;
-
-double result_busy = 0;
-std::vector<double> data_busy = {
-	1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.0, 1.1,
-	1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.0, 1.1, 1.2,
-	1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.0, 1.1, 1.2, 1.3,
-	1.4, 1.5, 1.6, 1.7, 1.8, 1.0, 1.1, 1.2, 1.3, 1.4,
-	1.5, 1.6, 1.7, 1.8, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5,
-	1.6, 1.7, 1.8, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
-	1.7, 1.8, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7,
-	1.8, 1.0, 1.5, 1.6, 1.7, 1.5, 1.6, 1.7, 1.8, 1.0,
-	1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 1.8, 2.0, 1.1, 1.2,
-	1.7, 1.8, 2.0, 1.1, 1.2, 1.1, 1.2, 1.5, 1.6, 1.7,
-};
-
-double result_busy2 = 0;
-std::vector<double> data_busy2 = {
-	0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1,
-	0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1, 0.2,
-	0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1, 0.2, 0.3,
-	0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1, 0.2, 0.3, 0.4,
-	0.5, 0.6, 0.7, 0.8, 1.0, 0.1, 0.2, 0.3, 0.4, 0.5,
-	0.6, 0.7, 0.8, 1.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6,
-	0.7, 0.8, 1.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7,
-	0.8, 1.0, 0.5, 0.6, 0.7, 0.6, 0.7, 0.8, 1.0, 0.1,
-	0.7, 0.8, 1.0, 0.1, 0.2, 0.5, 0.6, 0.7, 0.6, 0.7,
-	0.4, 0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.7, 0.8, 1.0,
-};
-
-double result_deadline = 0;
-double result_deadline2 = 0;
-std::vector<double> data_deadline = {
-	0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1,
-	0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1, 0.2,
-	0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1, 0.2, 0.3,
-	0.4, 0.5, 0.6, 0.7, 0.8, 1.0, 0.1, 0.2, 0.3, 0.4,
-	0.5, 0.6, 0.7, 0.8, 1.0, 0.1, 0.2, 0.3, 0.4, 0.5,
-	0.6, 0.7, 0.8, 1.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6,
-	0.7, 0.8, 1.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7,
-	0.8, 1.0, 0.5, 0.6, 0.7, 0.6, 0.7, 0.8, 1.0, 0.1,
-	0.7, 0.8, 1.0, 0.1, 0.2, 0.5, 0.6, 0.7, 0.6, 0.7,
-	0.4, 0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.7, 0.8, 1.0,
-};
+std::vector<double> data_workload;
+double result_control;
+struct TaskConfigurations tTests[test_size];
 
 void workload_sin(const std::vector<double>& data, double& result)
 {
@@ -89,121 +51,121 @@ void workload_sin(const std::vector<double>& data, double& result)
 
 void workload_busy(void)
 {
-	workload_sin(data_busy, result_busy);
+	workload_sin(data_workload, tTests[0].result);
 }
 
 void workload_busy2(void)
 {
-	workload_sin(data_busy2, result_busy2);
+	workload_sin(data_workload, tTests[1].result);
 }
 
 void workload_deadline(void)
 {
-	workload_sin(data_deadline, result_deadline);
+	workload_sin(data_workload, tTests[2].result);
 }
 
 void workload_deadline2(void)
 {
-	workload_sin(data_deadline, result_deadline2);
+	workload_sin(data_workload, tTests[3].result);
+}
+
+void workload_control(void)
+{
+	workload_sin(data_workload, result_control);
+	printf("Result = %lf\n", result_control);
 }
 
 void start()
 {
+	for(uint16_t i = 0; i < 0xaff; i++){
+		time_t t;
+		srand((unsigned) time(&t));
+		data_workload.push_back((double) rand() / (double) rand());
+	}
+
 	if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
 		fprintf(stderr, "Failed to lock memory: %s\n", strerror(errno));
 	}
 
-	tBusy.name = "BUSY 1000 us";
-	tBusy.config.affinity = 0;
-	tBusy.config.schedule_priority = SCHED_RR;
-	tBusy.config.nice_value = -20;
-	tBusy.config.tolerance = -1;
-	tBusy.config.period_ns = 1'000'000;
-	tBusy.config.cycle.lazy_sleep = tBusy.config.period_ns - 350'000;
-	tBusy.config.cycle.step_sleep = 350;
-	tBusy.config.offset_ns = 750,
-	tBusy.config.fptr = workload_busy;
+	tTests[0].name = "BUSY 1000 us";
+	tTests[0].routine = TaskCycle::routine_busy;
+	tTests[0].task.affinity = 0;
+	tTests[0].task.schedule_priority = SCHED_FIFO;
+	tTests[0].task.nice_value = -20;
+	tTests[0].task.tolerance = -1;
+	tTests[0].task.period_ns = 1'000'000;
+	tTests[0].task.cycle.lazy_sleep = tTests[0].task.period_ns - 350'000;
+	tTests[0].task.cycle.step_sleep = 350;
+	tTests[0].task.offset_ns = 750,
+	tTests[0].task.fptr = workload_busy;
 
-	tBusy2.name = "BUSY 5000 us";
-	tBusy2.config.affinity = 0;
-	tBusy2.config.schedule_priority = SCHED_RR;
-	tBusy2.config.priority_offset = 1;
-	tBusy2.config.nice_value = -20;
-	tBusy2.config.tolerance = -1;
-	tBusy2.config.period_ns = 5'000'000;
-	tBusy2.config.cycle.lazy_sleep = tBusy2.config.period_ns - 1'000'000;
-	tBusy2.config.cycle.step_sleep = 50;
-	tBusy2.config.offset_ns = 750,
-	tBusy2.config.fptr = workload_busy2;
+	tTests[2].name = "BUSY 5000 us";
+	tTests[2].routine = TaskCycle::routine_busy;
+	tTests[2].task.affinity = 0;
+	tTests[2].task.schedule_priority = SCHED_RR;
+	tTests[2].task.priority_offset = 1;
+	tTests[2].task.nice_value = -20;
+	tTests[2].task.tolerance = -1;
+	tTests[2].task.period_ns = 5'000'000;
+	tTests[2].task.cycle.lazy_sleep = tTests[2].task.period_ns - 1'000'000;
+	tTests[2].task.cycle.step_sleep = 50;
+	tTests[2].task.offset_ns = 750,
+	tTests[2].task.fptr = workload_busy2;
 
-	tDeadline.name = "DEADLINE 1000 us";
-	tDeadline.config.nice_value = -20;
-	tDeadline.config.period_ns = 1'000'000;
-	tDeadline.config.offset_ns = 0;
-	tDeadline.config.cycle.exec_time = 100'000;
-	tDeadline.config.deadline_time = tDeadline.config.period_ns - 500'000;
-	tDeadline.config.fptr = workload_deadline;
+	tTests[1].name = "DEADLINE 1000 us";
+	tTests[1].routine = TaskCycle::routine_deadline;
+	tTests[1].task.nice_value = -20;
+	tTests[1].task.period_ns = 1'000'000;
+	tTests[1].task.offset_ns = 0;
+	tTests[1].task.cycle.exec_time = 500'000;
+	tTests[1].task.deadline_time = tTests[1].task.period_ns - 100'000;
+	tTests[1].task.fptr = workload_deadline;
 
-	tDeadline2.name = "DEADLINE 5000 us";
-	tDeadline2.config.nice_value = -20;
-	tDeadline2.config.period_ns = 5'000'000;
-	tDeadline2.config.offset_ns = 0;
-	tDeadline2.config.cycle.exec_time = 100'000;
-	tDeadline2.config.deadline_time = tDeadline2.config.period_ns - 250'000;
-	tDeadline2.config.fptr = workload_deadline2;
+	tTests[3].name = "DEADLINE 5000 us";
+	tTests[3].routine = TaskCycle::routine_deadline;
+	tTests[3].task.nice_value = -20;
+	tTests[3].task.period_ns = 5'000'000;
+	tTests[3].task.offset_ns = 0;
+	tTests[3].task.cycle.exec_time = 500'000;
+	tTests[3].task.deadline_time = tTests[3].task.period_ns - 250'000;
+	tTests[3].task.fptr = workload_deadline2;
 
-	tDeadline.thread = std::thread(&TaskCycle::routine_deadline, &tDeadline.config,
-		tDeadline.samples, sample_size);
-	pthread_setname_np(tDeadline.thread.native_handle(), tDeadline.name.c_str());
+	for(uint8_t i = 0; i < test_size; i++){
+		tTests[i].thread = std::thread(
+			tTests[i].routine, &tTests[i].task, tTests[i].samples,
+			sample_size);
 
-	tBusy.thread = std::thread(&TaskCycle::routine_busy, &tBusy.config,
-		tBusy.samples, sample_size);
-	pthread_setname_np(tBusy.thread.native_handle(), tBusy.name.c_str());
-
-	tDeadline2.thread = std::thread(&TaskCycle::routine_deadline, &tDeadline2.config,
-		tDeadline2.samples, sample_size);
-	pthread_setname_np(tDeadline2.thread.native_handle(), tDeadline2.name.c_str());
-
-	tBusy2.thread = std::thread(&TaskCycle::routine_busy, &tBusy2.config,
-		tBusy2.samples, sample_size);
-	pthread_setname_np(tBusy2.thread.native_handle(), tBusy2.name.c_str());
+		pthread_setname_np(
+			tTests[i].thread.native_handle(),
+			tTests[i].name.c_str());
+	}
 }
 
 void stop()
 {
-	tBusy.config.is_running = false;
-	tBusy2.config.is_running = false;
-	tDeadline.config.is_running = false;
-	tDeadline2.config.is_running = false;
-
-	tDeadline.thread.join();
-	tDeadline2.thread.join();
-	tBusy2.thread.join();
-	tBusy.thread.join();
-
-	TaskCycle::stats_summarize(&tBusy.summary, tBusy.samples, sample_size,
-		tBusy.config.period_ns);
-
-	TaskCycle::stats_summarize(&tBusy2.summary, tBusy2.samples, sample_size,
-		tBusy2.config.period_ns);
-
-	TaskCycle::stats_summarize(&tDeadline.summary, tDeadline.samples, sample_size,
-		tDeadline.config.period_ns);
-
-	TaskCycle::stats_summarize(&tDeadline2.summary, tDeadline2.samples, sample_size,
-		tDeadline2.config.period_ns);
+	for(uint8_t i = 0; i < test_size; i++){
+		tTests[i].task.is_running = false;
+		tTests[i].thread.join();
+	}
 
 	printf("\n");
 
-	TaskCycle::stats_print(tBusy.name.c_str(), tBusy.summary);
-	TaskCycle::stats_print(tDeadline.name.c_str(), tDeadline.summary);
-	TaskCycle::stats_print(tBusy2.name.c_str(), tBusy2.summary);
-	TaskCycle::stats_print(tDeadline2.name.c_str(), tDeadline2.summary);
+	workload_control();
 
-	printf("(%d) %20s %16.6lf\t%16ld loop\n", tBusy.config.tid, tBusy.name.c_str(), result_busy, tBusy.config.ncycle);
-	printf("(%d) %20s %16.6lf\t%16ld loop\n", tDeadline.config.tid, tDeadline.name.c_str(), result_deadline, tDeadline.config.ncycle);
-	printf("(%d) %20s %16.6lf\t%16ld loop\n", tBusy2.config.tid, tBusy2.name.c_str(), result_busy2, tBusy2.config.ncycle);
-	printf("(%d) %20s %16.6lf\t%16ld loop\n", tDeadline2.config.tid, tDeadline2.name.c_str(), result_deadline2, tDeadline2.config.ncycle);
+	for(uint8_t i = 0; i < test_size; i++){
+		TaskCycle::stats_summarize(
+			&tTests[i].summary, tTests[i].samples,
+			sample_size, tTests[i].task.period_ns);
+
+		TaskCycle::stats_print(tTests[i].name.c_str(),
+			tTests[i].summary);
+
+		printf("(%d) %20s %16lld loops in %lld ns => %lf [%d]\n\n",
+			tTests[i].task.tid, tTests[i].name.c_str(),
+			tTests[i].task.elapsed.ncycle,
+			tTests[i].task.elapsed.ns,
+			tTests[i].result, tTests[i].result == result_control);
+	}
 }
 
 }

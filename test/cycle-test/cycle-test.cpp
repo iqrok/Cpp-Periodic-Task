@@ -1,9 +1,10 @@
 #include "cycle-test.hpp"
 
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
+
+#include <cstdio>
+#include <cstdlib>
 
 void handler(int code)
 {
