@@ -1,8 +1,8 @@
 #ifndef _TIMESPEC_HELPER_HPP_
 #define _TIMESPEC_HELPER_HPP_
 
-#include <time.h>
 #include <cstdint>
+#include <time.h>
 
 #ifndef NSEC_PER_SEC
 #define NSEC_PER_SEC 1000000000
@@ -16,11 +16,19 @@ void diff(const struct timespec& a, const struct timespec& b,
 	*ns = ((a.tv_sec - b.tv_sec) * NSEC_PER_SEC) + (a.tv_nsec - b.tv_nsec);
 }
 
-void normalize(struct timespec* a)
+void normalize_upper(struct timespec* a)
 {
 	while (a->tv_nsec >= NSEC_PER_SEC) {
 		a->tv_nsec -= NSEC_PER_SEC;
 		a->tv_sec++;
+	}
+}
+
+void normalize_lower(struct timespec* a)
+{
+	while (a->tv_nsec < 0) {
+		a->tv_nsec += NSEC_PER_SEC;
+		a->tv_sec--;
 	}
 }
 
@@ -30,7 +38,11 @@ void copy(struct timespec* dst, const struct timespec& src,
 	dst->tv_sec = src.tv_sec;
 	dst->tv_nsec = src.tv_nsec + offset_ns;
 
-	normalize(dst);
+	if(offset_ns >= 0) {
+		normalize_upper(dst);
+	} else {
+		normalize_lower(dst);
+	}
 }
 
 bool compare(const struct timespec& left, const struct timespec& right)
