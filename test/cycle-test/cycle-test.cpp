@@ -1,9 +1,10 @@
-#include "main.hpp"
+#include "cycle-test.hpp"
 
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
+
+#include <cstdio>
+#include <cstdlib>
 
 void handler(int code)
 {
@@ -12,7 +13,7 @@ void handler(int code)
 	exit(code);
 }
 
-int main()
+int main(int argc, char* argv[])
 {
 	MainRoutine::start();
 
@@ -27,7 +28,15 @@ int main()
 	sigaction(SIGKILL, &signalHandler, NULL);
 	sigaction(SIGABRT, &signalHandler, NULL);
 
-	pause();
+	if (argc <= 1) {
+		printf("Press Ctrl+C to exit...\n");
+		pause();
+	} else {
+		uint64_t us = atol(argv[1]) * 1000;
+		printf("Interrupt in %s ms...\n", argv[1]);
+		usleep(us);
+		raise(SIGINT);
+	}
 
 	return 0;
 }
