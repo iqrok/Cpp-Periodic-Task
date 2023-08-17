@@ -17,6 +17,27 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	add_compile_options (-fcolor-diagnostics)
 endif ()
 
+if ("${ARCH}" STREQUAL "arm64" OR "${ARCH}" STREQUAL "aarch64")
+	set(ARCH "aarch64")
+	set(CMAKE_C_COMPILER   aarch64-linux-gnu-gcc)
+	set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+elseif ("${ARCH}" STREQUAL "armhf")
+	set(ARCH "armhf")
+	set(CMAKE_C_COMPILER   arm-linux-gnueabihf-gcc)
+	set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
+else ()
+	set(ARCH "x86_64")
+	set(CMAKE_C_COMPILER   "cc")
+	set(CMAKE_CXX_COMPILER "c++")
+endif ()
+
+#~ if (!ARCH)
+	#~ set(CMAKE_C_COMPILER   "cc")
+	#~ set(CMAKE_CXX_COMPILER "c++")
+#~ endif()
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${ARCH}")
+
 if (DEBUG)
 	add_compile_options(-ggdb)
 endif()
@@ -34,6 +55,8 @@ link_libraries(Threads::Threads)
 
 include_directories("${INCLUDE_DIR}")
 
+message("[CC COMPILER] ${CMAKE_C_COMPILER}")
+message("[CXX COMPILER] ${CMAKE_CXX_COMPILER}")
 message("[CXX FLAGS] ${CMAKE_CXX_FLAGS}")
 
 add_subdirectory("./test")
