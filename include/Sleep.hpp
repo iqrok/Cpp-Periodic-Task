@@ -26,23 +26,6 @@ struct sleep_task_s {
 
 void wait(struct sleep_task_s* task)
 {
-	// calculate execution time
-	Timespec::now(&task->current);
-	Timespec::diff(task->current, task->timer, &task->exec_time);
-
-	// reuse task->current to set deadline
-	Timespec::copy(&task->deadline, task->timer, task->period_cmp);
-
-	// sleep for given duration
-	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &task->deadline, NULL);
-
-	// calculate cycle time
-	Timespec::now(&task->deadline);
-	Timespec::diff(task->deadline, task->timer, &task->cycle_time);
-}
-
-void busy_wait(struct sleep_task_s* task)
-{
 	task->counter = 0;
 
 	// calculate execution time
@@ -67,7 +50,8 @@ void busy_wait(struct sleep_task_s* task)
 		// need to add sleep to avoid throttling being activated by OS
 		if (++task->counter > task->step_sleep) {
 			task->counter = 0;
-			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &task->current, NULL);
+			clock_nanosleep(
+				CLOCK_MONOTONIC, TIMER_ABSTIME, &task->current, NULL);
 		}
 	}
 
