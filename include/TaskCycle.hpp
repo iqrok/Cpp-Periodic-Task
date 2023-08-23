@@ -88,38 +88,43 @@ void set_thread_properties(const task_config_t* task)
 		CPU_SET(target_affinity, &cpuset);
 
 		if (sched_setaffinity(task->tid, sizeof(cpu_set_t), &cpuset) == -1) {
-			fprintf(stderr, "(%d) sched_setaffinity: %s\n", task->tid, strerror(errno));
-		}
+			fprintf(stderr, "(%d) sched_setaffinity: %s\n", task->tid,
+				strerror(errno));
 #if DEBUG > 0
-		else {
-			fprintf(stderr, "(%d) sched_setaffinity: CPU %d\n", task->tid, target_affinity);
-		}
+		} else {
+			fprintf(stdout, "(%d) sched_setaffinity: CPU %d\n", task->tid,
+				target_affinity);
 #endif
+		}
 	}
 
 	if (task->schedule_priority > -1) {
 		struct sched_param param = {};
-		param.sched_priority = sched_get_priority_max(task->schedule_priority) - task->priority_offset;
+		param.sched_priority = sched_get_priority_max(task->schedule_priority)
+			- task->priority_offset;
 
-		if (sched_setscheduler(task->tid, task->schedule_priority, &param) == -1) {
-			fprintf(stderr, "(%d) sched_setscheduler: %s\n", task->tid, strerror(errno));
-		}
+		if (sched_setscheduler(task->tid, task->schedule_priority, &param)
+			== -1) {
+			fprintf(stderr, "(%d) sched_setscheduler: %s\n", task->tid,
+				strerror(errno));
 #if DEBUG > 0
-		else {
-			fprintf(stderr, "(%d) Schedule priority: %d\n", task->tid, param.sched_priority);
-		}
+		} else {
+			fprintf(stderr, "(%d) Schedule priority: %d\n", task->tid,
+				param.sched_priority);
 #endif
+		}
 	}
 
 	if (task->nice_value != 20) {
 		if (setpriority(PRIO_PROCESS, task->tid, task->nice_value) == -1) {
-			fprintf(stderr, "(%d) setpriority: %s\n", task->tid, strerror(errno));
-		}
+			fprintf(
+				stderr, "(%d) setpriority: %s\n", task->tid, strerror(errno));
 #if DEBUG > 0
-		else {
-			fprintf(stderr, "(%d) Nice Value: %d\n", task->tid, task->nice_value);
-		}
+		} else {
+			fprintf(
+				stderr, "(%d) Nice Value: %d\n", task->tid, task->nice_value);
 #endif
+		}
 	}
 
 	if (prctl(PR_SET_TIMERSLACK, 1, task->tid, 0, 0) == -1) {
@@ -127,7 +132,8 @@ void set_thread_properties(const task_config_t* task)
 	}
 }
 
-void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_size)
+void routine_busy(
+	task_config_t* task, float* samples, const uint32_t& sample_size)
 {
 	task->tid = gettid();
 	uint32_t index = 0;
@@ -137,8 +143,13 @@ void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_s
 	set_thread_properties(task);
 
 #if DEBUG > 0
-	printf("(%d) Starting Sleep Loop thread\n", task->tid);
+	printf("(%d) Starting Busy Loop thread\n", task->tid);
 #endif
+
+	// limit lazy_sleep by period. busy wait won't happen at this point
+	if (task->cycle.lazy_sleep > task->cycle.period_cmp) {
+		task->cycle.lazy_sleep = task->cycle.period_cmp;
+	}
 
 	task->is_running = true;
 	Timespec::now(&task->elapsed.start);
@@ -152,12 +163,14 @@ void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_s
 
 		task->elapsed.ncycle++;
 
-		if (StatisticsStatic::push(samples, task->cycle.cycle_time, &index, sample_size)) {
+		if (StatisticsStatic::push(
+				samples, task->cycle.cycle_time, &index, sample_size)) {
 			if (task->tolerance < 0) {
 				continue;
 			}
 
-			diff = StatisticsStatic::average(samples, sample_size) - task->period_ns;
+			diff = StatisticsStatic::average(samples, sample_size)
+				- task->period_ns;
 			if (fabs(diff / task->period_ns) > task->tolerance) {
 				task->cycle.period_cmp = task->period_ns - diff;
 			}
@@ -165,14 +178,13 @@ void routine_sleep(task_config_t* task, float* samples, const uint32_t& sample_s
 	}
 
 	Timespec::now(&task->elapsed.finish);
-	Timespec::diff(task->elapsed.finish, task->elapsed.start, &task->elapsed.ns);
+	Timespec::diff(
+		task->elapsed.finish, task->elapsed.start, &task->elapsed.ns);
 }
 
-void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_size)
+void routine_busy(task_config_t* task)
 {
 	task->tid = gettid();
-	uint32_t index = 0;
-	float diff;
 	task->cycle.period_cmp = task->period_ns - task->offset_ns;
 
 	set_thread_properties(task);
@@ -181,9 +193,9 @@ void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_si
 	printf("(%d) Starting Busy Loop thread\n", task->tid);
 #endif
 
-	// disable lazy_sleep if the value is greater than the period
-	if (task->cycle.lazy_sleep >= task->cycle.period_cmp) {
-		task->cycle.lazy_sleep = -1;
+	// limit lazy_sleep by period. busy wait won't happen at this point
+	if (task->cycle.lazy_sleep > task->cycle.period_cmp) {
+		task->cycle.lazy_sleep = task->cycle.period_cmp;
 	}
 
 	task->is_running = true;
@@ -192,29 +204,18 @@ void routine_busy(task_config_t* task, float* samples, const uint32_t& sample_si
 
 	while (task->is_running) {
 		(*task->fptr)();
-
-		Sleep::busy_wait(&task->cycle);
+		Sleep::wait(&task->cycle);
 		Timespec::now(&task->cycle.timer);
-
 		task->elapsed.ncycle++;
-
-		if (StatisticsStatic::push(samples, task->cycle.cycle_time, &index, sample_size)) {
-			if (task->tolerance < 0) {
-				continue;
-			}
-
-			diff = StatisticsStatic::average(samples, sample_size) - task->period_ns;
-			if (fabs(diff / task->period_ns) > task->tolerance) {
-				task->cycle.period_cmp = task->period_ns - diff;
-			}
-		}
 	}
 
 	Timespec::now(&task->elapsed.finish);
-	Timespec::diff(task->elapsed.finish, task->elapsed.start, &task->elapsed.ns);
+	Timespec::diff(
+		task->elapsed.finish, task->elapsed.start, &task->elapsed.ns);
 }
 
-void routine_deadline(task_config_t* task, float* samples, const uint32_t& sample_size)
+void routine_deadline(
+	task_config_t* task, float* samples, const uint32_t& sample_size)
 {
 	task->tid = gettid();
 	uint32_t index = 0;
@@ -225,12 +226,12 @@ void routine_deadline(task_config_t* task, float* samples, const uint32_t& sampl
 	attr.sched_nice = task->nice_value;
 	attr.sched_runtime = task->cycle.exec_time;
 	attr.sched_period = task->period_ns - task->offset_ns;
-	attr.sched_deadline = task->deadline_time > -1
-		? task->deadline_time
-		: attr.sched_period >> 1;
+	attr.sched_deadline = task->deadline_time > -1 ? task->deadline_time
+												   : attr.sched_period >> 1;
 
 	if (syscall(__NR_sched_setattr, task->tid, &attr, 0) == -1) {
-		fprintf(stderr, "(%d) Failed to set sched_attr: %s\n", task->tid, strerror(errno));
+		fprintf(stderr, "(%d) Failed to set sched_attr: %s\n", task->tid,
+			strerror(errno));
 		return;
 	}
 
@@ -248,8 +249,10 @@ void routine_deadline(task_config_t* task, float* samples, const uint32_t& sampl
 	while (task->is_running) {
 		Timespec::now(&task->cycle.timer);
 		(*task->fptr)();
-		Timespec::diff(task->cycle.timer, task->cycle.deadline, &task->cycle.cycle_time);
-		StatisticsStatic::push(samples, task->cycle.cycle_time, &index, sample_size);
+		Timespec::diff(
+			task->cycle.timer, task->cycle.deadline, &task->cycle.cycle_time);
+		StatisticsStatic::push(
+			samples, task->cycle.cycle_time, &index, sample_size);
 		Timespec::copy(&task->cycle.deadline, task->cycle.timer, 0);
 
 		task->elapsed.ncycle++;
@@ -258,27 +261,74 @@ void routine_deadline(task_config_t* task, float* samples, const uint32_t& sampl
 	}
 
 	Timespec::now(&task->elapsed.finish);
-	Timespec::diff(task->elapsed.finish, task->elapsed.start, &task->elapsed.ns);
+	Timespec::diff(
+		task->elapsed.finish, task->elapsed.start, &task->elapsed.ns);
 }
 
-void stats_summarize(struct distribution_summary_s* summary, float* distribution,
-	const uint32_t& sample_size, const uint64_t& target_period)
+void routine_deadline(task_config_t* task)
+{
+	task->tid = gettid();
+
+	struct sched_attr attr;
+	attr.size = sizeof(attr);
+	attr.sched_policy = SCHED_DEADLINE;
+	attr.sched_nice = task->nice_value;
+	attr.sched_runtime = task->cycle.exec_time;
+	attr.sched_period = task->period_ns - task->offset_ns;
+	attr.sched_deadline = task->deadline_time > -1 ? task->deadline_time
+												   : attr.sched_period >> 1;
+
+	if (syscall(__NR_sched_setattr, task->tid, &attr, 0) == -1) {
+		fprintf(stderr, "(%d) Failed to set sched_attr: %s\n", task->tid,
+			strerror(errno));
+		return;
+	}
+
+	if (setpriority(PRIO_PROCESS, task->tid, task->nice_value) == -1) {
+		fprintf(stderr, "(%d) setpriority: %s\n", task->tid, strerror(errno));
+	}
+
+#if DEBUG > 0
+	printf("(%d) Starting Sched Deadline thread\n", task->tid);
+#endif
+
+	task->is_running = true;
+	Timespec::now(&task->elapsed.start);
+
+	while (task->is_running) {
+		(*task->fptr)();
+		task->elapsed.ncycle++;
+		sched_yield();
+	}
+
+	Timespec::now(&task->elapsed.finish);
+	Timespec::diff(
+		task->elapsed.finish, task->elapsed.start, &task->elapsed.ns);
+}
+
+void stats_summarize(struct distribution_summary_s* summary,
+	float* distribution, const uint32_t& sample_size,
+	const uint64_t& target_period)
 {
 	summary->target = target_period;
 	summary->size = sample_size;
 
-	StatisticsStatic::calculate(
-		distribution, sample_size, summary->target, &summary->mean,
-		&summary->standard_deviation, &summary->periodic_deviation,
-		&summary->min, &summary->max);
+	StatisticsStatic::calculate(distribution, sample_size, summary->target,
+		&summary->mean, &summary->standard_deviation,
+		&summary->periodic_deviation, &summary->min, &summary->max);
 
-	summary->percent_periodic_deviation = summary->periodic_deviation / summary->target;
-	summary->percent_standard_deviation = summary->standard_deviation / summary->mean;
-	summary->percent_min = fabs(summary->min - summary->target) / summary->target;
-	summary->percent_max = fabs(summary->max - summary->target) / summary->target;
+	summary->percent_periodic_deviation
+		= summary->periodic_deviation / summary->target;
+	summary->percent_standard_deviation
+		= summary->standard_deviation / summary->mean;
+	summary->percent_min
+		= fabs(summary->min - summary->target) / summary->target;
+	summary->percent_max
+		= fabs(summary->max - summary->target) / summary->target;
 }
 
-void stats_print(const char* title, const struct distribution_summary_s& summary)
+void stats_print(
+	const char* title, const struct distribution_summary_s& summary)
 {
 	printf("============ %s ============\n", title);
 	printf("Sample Size  : %15d\n", summary.size);
@@ -298,7 +348,10 @@ void stats_print(const char* title, const struct distribution_summary_s& summary
 
 	printf("diff min max : %15.3f us (%9.3f %% )\n",
 		(summary.max - summary.min) / 1000,
-		100 * ((fabs(summary.min - summary.target) + (fabs(summary.max - summary.target))) / summary.target));
+		100
+			* ((fabs(summary.min - summary.target)
+				   + (fabs(summary.max - summary.target)))
+				/ summary.target));
 
 	printf("------------------------------\n");
 }
